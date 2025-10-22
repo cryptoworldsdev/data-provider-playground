@@ -1,48 +1,75 @@
 import { CommonPluginErrors } from "every-plugin";
-import { eventIterator, oc } from "every-plugin/orpc";
+import { oc } from "every-plugin/orpc";
 import { z } from "every-plugin/zod";
 
-// Schema for the data items this plugin provides
-export const ItemSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  createdAt: z.string().datetime(),
+// --- Schemas ---
+
+// Asset represents a token/asset on a specific chain
+export const Asset = z.object({
+  chainId: z.string(),
+  assetId: z.string(), // e.g., ERC-20 address or canonical symbol id
+  symbol: z.string(),
+  decimals: z.number().int().min(0),
 });
 
-// Schema for search results
-export const SearchResultSchema = z.object({
-  item: ItemSchema,
-  score: z.number().min(0).max(1),
+// Rate represents a quote for swapping from source to destination asset
+export const Rate = z.object({
+  source: Asset,
+  destination: Asset,
+  amountIn: z.string(), // in source smallest units
+  amountOut: z.string(), // in destination smallest units
+  effectiveRate: z.number().describe("amountOut/amountIn normalized for decimals"),
+  totalFeesUsd: z.number().nullable(),
+  quotedAt: z.iso.datetime(),
 });
 
-// Schema for background broadcast events (MemoryPublisher)
-export const BackgroundEventSchema = z.object({
-  id: z.string(),
-  index: z.number(),
-  timestamp: z.number(),
+// Liquidity depth point for a specific slippage threshold
+export const LiquidityDepthPoint = z.object({
+  maxAmountIn: z.string(), // source units
+  slippageBps: z.number(), // e.g., 50 = 0.5%
 });
 
-// oRPC Contract definition
+// Liquidity depth for a route at different slippage thresholds
+export const LiquidityDepth = z.object({
+  route: z.object({ source: Asset, destination: Asset }),
+  thresholds: z.array(LiquidityDepthPoint), // include 50 and 100 bps at minimum
+  measuredAt: z.iso.datetime(),
+});
+
+// Volume metrics for a time window
+export const VolumeWindow = z.object({
+  window: z.enum(["24h", "7d", "30d"]),
+  volumeUsd: z.number(),
+  measuredAt: z.iso.datetime(),
+});
+
+// Assets listed by the provider
+export const ListedAssets = z.object({
+  assets: z.array(Asset),
+  measuredAt: z.iso.datetime(),
+});
+
+// Complete snapshot of provider data
+export const ProviderSnapshot = z.object({
+  volumes: z.array(VolumeWindow),
+  rates: z.array(Rate),
+  liquidity: z.array(LiquidityDepth),
+  listedAssets: ListedAssets,
+});
+
+// --- Contract ---
+
 export const contract = oc.router({
-  // Single item lookup by ID
-  getById: oc
-    .route({ method: 'GET', path: '/items/{id}' })
+  // Main endpoint - get complete snapshot for routes and notionals
+  getSnapshot: oc
+    .route({ method: "GET", path: "/snapshot" })
     .input(z.object({
-      id: z.string().min(1, "ID is required"),
+      routes: z.array(z.object({ source: Asset, destination: Asset })).min(1),
+      notionals: z.array(z.string()).min(1), // amounts in source units to quote
+      includeWindows: z.array(z.enum(["24h", "7d", "30d"]))
+        .default(["24h"]).optional(),
     }))
-    .output(z.object({
-      item: ItemSchema,
-    }))
-    .errors(CommonPluginErrors),
-
-  // Search with server-side streaming
-  search: oc
-    .route({ method: 'GET', path: '/search' })
-    .input(z.object({
-      query: z.string().min(1, "Query is required"),
-      limit: z.number().min(1).max(100).default(10),
-    }))
-    .output(eventIterator(SearchResultSchema)) // Notice "eventIterator", this enables streaming
+    .output(ProviderSnapshot)
     .errors(CommonPluginErrors),
 
   // Health check procedure
@@ -51,27 +78,6 @@ export const contract = oc.router({
     .output(z.object({
       status: z.literal('ok'),
       timestamp: z.string().datetime(),
-    }))
-    .errors(CommonPluginErrors),
-
-  // Background streaming with resume support (MemoryPublisher)
-  listenBackground: oc
-    .route({ method: 'POST', path: '/listenBackground' })
-    .input(z.object({
-      maxResults: z.number().optional(),
-      lastEventId: z.string().optional(),
-    }))
-    .output(eventIterator(BackgroundEventSchema))
-    .errors(CommonPluginErrors),
-
-  // Manual background event publishing
-  enqueueBackground: oc
-    .route({ method: 'POST', path: '/enqueueBackground' })
-    .input(z.object({
-      id: z.string().optional(),
-    }))
-    .output(z.object({
-      ok: z.boolean(),
     }))
     .errors(CommonPluginErrors),
 });

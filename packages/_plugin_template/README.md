@@ -1,115 +1,70 @@
-# Template Plugin
+# Data Provider Plugin Template
 
-A minimal, well-documented template for building every-plugin plugins. Use this as a starting point for integrating external APIs, libraries, or services.
-
-## What's Included
-
-```bash
-src/
-├── contract.ts    # oRPC contract (3 procedures: getById, search, ping)
-├── service.ts     # Plain TypeScript class with Effect error handling
-├── index.ts       # Plugin implementation with createPlugin
-└── LLM.txt        # Comprehensive guide for building plugins
-```
+Template for building single-provider bridge data adapters for the NEAR Intents data collection system.
 
 ## Quick Start
 
-> **📖 For a comprehensive guide with code examples and patterns, see [LLM.txt](./LLM.txt)**
+1. **Choose one provider**: LayerZero, Wormhole, CCTP, Across, deBridge, Axelar, or Li.Fi
 
-1. **Copy the template:**
+2. **Copy template**:
 
    ```bash
-   npx degit near-everything/every-plugin/plugins/template my-plugin
-   cd my-plugin
+   cp -r packages/_plugin_template packages/your-provider-plugin
+   cd packages/your-provider-plugin
    ```
 
-2. **Update `contract.ts`:**
-   - Define your API procedures
-   - Create Zod schemas for inputs/outputs
+3. **Replace mock implementation** in `src/service.ts`:
+   - Replace `getRates()`, `getVolumes()`, `getLiquidityDepth()`, `getListedAssets()` with real API calls
+   - Implement decimal normalization for `effectiveRate` calculations
+   - Add proper error handling for rate limits and timeouts
 
-3. **Update `service.ts`:**
-   - Replace constructor params with your config needs
-   - Implement methods to call your external API
-   - Use `Effect.tryPromise` for error handling
-
-4. **Update `index.ts`:**
-   - Change plugin `id` to `@your-org/your-plugin`
-   - Update `variables` and `secrets` schemas
-   - Pass config to service constructor
-
-5. **Test locally:**
-
+4. **Update plugin ID** in `src/index.ts`:
    ```typescript
-   import { createLocalPluginRuntime } from "every-plugin/runtime";
-   import YourPlugin from "./src/index";
-
-   const runtime = createLocalPluginRuntime(
-     { registry: {} },
-     { "your-plugin": YourPlugin }
-   );
-
-   const { client } = await runtime.usePlugin("your-plugin", {
-     variables: { baseUrl: "https://api.example.com", timeout: 10000 },
-     secrets: { apiKey: "your-key" }
-   });
-
-   const result = await client.getById({ id: "123" });
+   id: "@your-org/your-provider-name"
    ```
 
-## Documentation
+## Running Tests
 
-**👉 Read [LLM.txt](./LLM.txt) for the complete guide** - it includes:
+```bash
+# Run all tests
+npm test
 
-- Step-by-step plugin building tutorial
-- Advanced patterns (background processing, webhooks, pagination)
-- Error handling with CommonPluginErrors
-- Copy-paste code templates
-- Best practices and common pitfalls
-- Full working examples
+# Run unit tests only
+npm run test:unit
 
-The LLM.txt file is designed to be used with AI coding assistants to help you build plugins quickly.
-
-## Example: The Template in Action
-
-```typescript
-// After building and deploying
-const runtime = createPluginRuntime({
-  registry: {
-    "template": {
-      remoteUrl: "https://cdn.example.com/template/remoteEntry.js",
-      version: "1.0.0"
-    }
-  },
-  secrets: { API_KEY: process.env.API_KEY }
-});
-
-const { client } = await runtime.usePlugin("template", {
-  variables: { 
-    baseUrl: "https://api.example.com",
-    timeout: 5000 
-  },
-  secrets: { apiKey: "{{API_KEY}}" }
-});
-
-// Single fetch
-const item = await client.getById({ id: "item-123" });
-console.log(item.title);
-
-// Streaming
-const stream = await client.search({ query: "typescript", limit: 10 });
-for await (const result of stream) {
-  console.log(`${result.score}: ${result.item.title}`);
-}
-
-// Health check
-const ping = await client.ping();
-console.log(ping.status); // "ok"
+# Run integration tests only
+npm run test:integration
 ```
 
-## Related Examples
+Tests pass with mock implementation and serve as validation checkpoints for your real provider API.
 
-- **[test-plugin](../../packages/core/__tests__/test-plugin/)** - Testing patterns
+## Environment Variables
+
+```bash
+# Required
+DATA_PROVIDER_API_KEY=your_provider_api_key
+
+# Optional
+DATA_PROVIDER_BASE_URL=https://api.yourprovider.com
+DATA_PROVIDER_TIMEOUT=10000
+```
+
+## Contract
+
+Single endpoint `getSnapshot` that takes routes, notional amounts, and time windows, returning:
+
+- **volumes**: Trading volume for 24h/7d/30d windows
+- **rates**: Exchange rates and fees for each route/notional
+- **liquidity**: Max input amounts at 50bps and 100bps slippage
+- **listedAssets**: Supported assets on the provider
+
+## Notes
+
+- **One provider per plugin** - Implement only the provider you chose
+- **No background processing** - Simple request/response pattern
+- **Template injection** - Use `{{SECRET_NAME}}` for secrets in runtime config
+- **Error resilience** - Implement retries and rate limiting in your service methods
 
 ## License
 
-Part of the [every-plugin](https://github.com/near-everything/every-plugin) framework.
+Part of the NEAR Intents data collection system.
